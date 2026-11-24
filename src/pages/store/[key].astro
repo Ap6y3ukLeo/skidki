@@ -67,6 +67,10 @@ const slug = store.key.replaceAll(":", "-");
     </header>
 
     <section class="sp-toolbar">
+      <label class="sp-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="storeSearch" type="search" placeholder="Поиск по товарам" autocomplete="off" />
+      </label>
       <div class="chips" id="storeCats">
         <button class="chip" data-cat="all" aria-pressed="true">Все</button>
         {usedCats.map((c) => <button class="chip" data-cat={c} aria-pressed="false">{c}</button>)}
@@ -118,17 +122,20 @@ const slug = store.key.replaceAll(":", "-");
     <script>
       const chips = document.querySelectorAll("#storeCats .chip");
       const sort = document.getElementById("storeSort");
+      const search = document.getElementById("storeSearch");
       const grid = document.getElementById("storeGrid");
       const count = document.getElementById("storeCount");
       const cards = [...grid.querySelectorAll(".card")];
-      const state = { cat: "all", sort: "discount" };
+      const state = { cat: "all", sort: "discount", q: "" };
 
       const apply = () => {
+        const q = state.q.trim().toLowerCase();
         let shown = 0;
         cards.forEach((c) => {
-          const ok = state.cat === "all" || c.dataset.cat === state.cat;
-          c.hidden = !ok;
-          if (ok) shown++;
+          const catOk = state.cat === "all" || c.dataset.cat === state.cat;
+          const qOk = !q || (c.textContent || "").toLowerCase().includes(q);
+          c.hidden = !(catOk && qOk);
+          if (catOk && qOk) shown++;
         });
         const visible = cards.filter((c) => !c.hidden);
         visible
@@ -148,6 +155,7 @@ const slug = store.key.replaceAll(":", "-");
         }),
       );
       sort.addEventListener("change", () => { state.sort = sort.value; apply(); });
+      search.addEventListener("input", () => { state.q = search.value; apply(); });
 
       document.querySelector(".sp-back").addEventListener("click", (e) => {
         if (history.length > 1) { e.preventDefault(); history.back(); }
@@ -170,6 +178,16 @@ const slug = store.key.replaceAll(":", "-");
       .pill.accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 700; }
 
       .sp-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+      .sp-search {
+        display: flex; align-items: center; gap: 8px; flex: 1 1 240px;
+        padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--surface); color: var(--muted);
+      }
+      .sp-search input {
+        flex: 1; border: 0; background: transparent; color: var(--fg);
+        font: inherit; font-size: 14px; outline: none; min-width: 0;
+      }
+      .sp-search input::-webkit-search-cancel-button { filter: grayscale(1); }
       .sp-toolbar select {
         padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px;
         background: var(--surface); color: var(--fg); font: inherit; font-size: 13px;
