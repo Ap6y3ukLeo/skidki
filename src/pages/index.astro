@@ -1,0 +1,437 @@
+---
+import "../styles/app.css";
+---
+
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Скидки рядом — Магнит, Дикси, Ашан</title>
+    <meta name="description" content="Скидки и акции в магазинах рядом с вами: карта, фильтры, цены и старые цены." />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+      crossorigin=""
+    />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="panel" id="panel" data-collapsed="false">
+        <div class="panel-head" id="panelHead">
+          <div class="sheet-handle" id="sheetHandle"></div>
+          <div class="brand">
+            <span class="dot"></span>
+            <h1>Скидки рядом</h1>
+            <button class="btn ghost" id="themeBtn" title="Тема" aria-label="Переключить тему">◐</button>
+          </div>
+
+          <label class="search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path>
+            </svg>
+            <input id="q" type="search" placeholder="Товар, сеть или адрес" autocomplete="off" />
+          </label>
+
+          <div class="chips" id="cats"></div>
+        </div>
+
+        <div class="panel-body" id="list">
+          <p class="result-line">
+            <span id="count">Загрузка…</span>
+            <select id="sort" aria-label="Сортировка">
+              <option value="discount">Сначала выгодные %</option>
+              <option value="price">Дешевле</option>
+              <option value="distance">Ближе ко мне</option>
+            </select>
+          </p>
+          <div id="content"></div>
+        </div>
+      </aside>
+
+      <div class="map-wrap">
+        <div id="map"></div>
+
+        <div class="map-top">
+          <button class="search-area glass" id="areaBtn" hidden>Искать в этой области</button>
+        </div>
+
+        <div class="map-actions">
+          <button class="icon-btn" id="zoomIn" title="Приблизить" aria-label="Приблизить">＋</button>
+          <button class="icon-btn" id="zoomOut" title="Отдалить" aria-label="Отдалить">−</button>
+          <button class="icon-btn" id="geoBtn" title="Найти меня" aria-label="Найти меня">◎</button>
+        </div>
+
+        <div class="map-legend glass">
+          <span class="legend-dot"></span>
+          <span id="legend">Магазины со скидками</span>
+        </div>
+
+        <button class="icon-btn mobile-toggle" id="modeBtn" title="Карта / Список" aria-label="Карта или список">☰</button>
+      </div>
+    </div>
+
+    <script
+      is:inline
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script is:inline src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin=""></script>
+
+    <script type="module">
+      const CHAIN_COLORS = {
+        "Магнит": "#e01f26", "Дикси": "#00a0e3", "Ашан": "#c8102e", "Лента": "#004b8d",
+        "Перекрёсток": "#00843d", "Глобус": "#1f77b4", "Метро": "#003da5",
+      };
+      const CHAIN_LOGOS = {
+        "Магнит": "/logos/magnit.png",
+        "Дикси": "/logos/dixy-emblem.svg",
+        "Ашан": "/logos/auchan.png",
+        "Пятёрочка": "/logos/pyat.png",
+      };
+      const PIN_LOGOS = {
+        "Магнит": "/logos/magnit.png",
+        "Дикси": "/logos/dixy-emblem.svg",
+        "Ашан": "/logos/auchan.png",
+        "Пятёрочка": "/logos/pyat.png",
+      };
+      const logoHTML = (chain) => CHAIN_LOGOS[chain]
+        ? `<span class="logo"><img src="${CHAIN_LOGOS[chain]}" alt="${chain}" loading="lazy"></span>`
+        : `<span class="logo" style="background:${CHAIN_COLORS[chain] || "#444"};border-color:transparent">
+             <span class="txt" style="color:#fff;font-size:15px">${(chain || "?").slice(0, 1)}</span>
+           </span>`;
+      const CATS = {
+        "Продукты": /молок|хлеб|мяс|сыр|творог|йогурт|яйц|масл|куриц|рыб|овощ|фрукт|банан|картоф|сахар|соль|круп|макарон|консерв|соус|кетчуп|майонез|колбас|сосиск|пельмен|морожен|шоколад|печень|конфет|торт|хлеб|батон|каша|мука/i,
+        "Напитки": /вода|сок|чай|кофе|напит|лимонад|квас|пиво|вино|морс|энергет/i,
+        "Бытовая химия": /стирк|чистк|моющ|мыло|шампун|гель|порошок|салфет|бумаг|пакет|губк|отбелив|кондиционер для белья/i,
+        "Гигиена": /паст|щетк|прокладк|подгузник|дезодорант|крем|бритв|ватн|пластыр/i,
+        "Дом": /лампа|батарейк|посуд|кружк|тарелк|полотенц|мешк|пакет/i,
+        "Детям": /детск|игрушк|смесь|соск|бутылоч/i,
+      };
+
+      const state = {
+        store: null, q: "", cat: "all", sort: "discount",
+        fav: new Set(JSON.parse(localStorage.getItem("fav") || "[]")),
+        user: null, bbox: null,
+      };
+
+      const slug = (key) => `/store/${key.replaceAll(":", "-")}/`;
+
+      let DATA = null, ITEMS = [], BY_STORE = new Map(), MAP_STORES = [];
+      let map, cluster, markers = new Map(), userMarker = null;
+
+      const $ = (id) => document.getElementById(id);
+      const els = {
+        content: $("content"), count: $("count"), cats: $("cats"), q: $("q"),
+        sort: $("sort"), citySwitch: $("citySwitch"), list: $("list"), panel: $("panel"),
+      };
+
+      const money = (v) => (v == null ? "" : v.toLocaleString("ru-RU", { maximumFractionDigits: 2 }));
+      const dist = (a, b) => {
+        const R = 6371, dLat = (b[0]-a[0])*Math.PI/180, dLon = (b[1]-a[1])*Math.PI/180;
+        const x = Math.sin(dLat/2)**2 + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
+        return 2*R*Math.asin(Math.sqrt(x));
+      };
+      const fmtDist = (km) => (km < 1 ? `${Math.round(km*1000)} м` : `${km.toFixed(1)} км`);
+      const catOf = (title) => Object.entries(CATS).find(([, re]) => re.test(title || ""))?.[0] || "Прочее";
+
+      function cityStores() {
+        return MAP_STORES;
+      }
+
+      function itemsFor(storeKey) {
+        const base = storeKey ? (BY_STORE.get(storeKey) || []) : ITEMS;
+        const q = state.q.trim().toLowerCase();
+        const storeInfo = storeKey ? cityStores().find((s) => s.key === storeKey) : null;
+        const qOk = (d) => {
+          if (!q) return true;
+          return (d.title || "").toLowerCase().includes(q)
+            || (d.store || "").toLowerCase().includes(q)
+            || (d.address || "").toLowerCase().includes(q)
+            || (storeInfo?.label || "").toLowerCase().includes(q);
+        };
+        let out = base.filter(qOk);
+        if (state.cat === "fav") out = out.filter((d) => state.fav.has(d.title + d.store_key));
+        else if (state.cat !== "all") out = out.filter((d) => catOf(d.title) === state.cat);
+
+        const distOf = (d) => {
+          const s = cityStores().find((x) => x.key === d.store_key);
+          return state.user && s ? dist(state.user, [s.lat, s.lon]) : 999;
+        };
+        if (state.sort === "price") out.sort((a, b) => (a.price || 0) - (b.price || 0));
+        else if (state.sort === "distance") out.sort((a, b) => distOf(a) - distOf(b));
+        else out.sort((a, b) => (b.discount_percent || 0) - (a.discount_percent || 0));
+        return out;
+      }
+
+      function storeMaxDiscount(key) {
+        const list = BY_STORE.get(key) || [];
+        return list.reduce((m, d) => Math.max(m, d.discount_percent || 0), 0);
+      }
+
+      function storeCount(key) {
+        return (BY_STORE.get(key) || []).length;
+      }
+
+      /* ---------- отрисовка списка ---------- */
+
+      function renderCats() {
+        const cats = ["all", "fav", ...Object.keys(CATS), "Прочее"];
+        els.cats.innerHTML = cats
+          .map((c) => `<button class="chip" data-cat="${c}" aria-pressed="${state.cat === c}">${
+            c === "all" ? "Все" : c === "fav" ? "Избранное" : c}</button>`)
+          .join("");
+        els.cats.querySelectorAll("button").forEach((b) =>
+          b.addEventListener("click", () => {
+            state.cat = b.dataset.cat;
+            renderCats();
+            renderList();
+          }),
+        );
+      }
+
+      function renderCities() {
+        // переключатель городов убран: показываем все магазины вокруг
+      }
+
+      function storeCard(store) {
+        const s = cityStores().find((x) => x.key === store.key);
+        if (!s) return "";
+        const d = state.user ? fmtDist(dist(state.user, [s.lat, s.lon])) : null;
+        const n = storeCount(s.key);
+        return `
+          <div class="store-card">
+            <div class="row">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                ${logoHTML(s.chain)}
+                <h2>${s.chain}</h2>
+              </div>
+              <span class="pill">${n ? `${n} товаров` : "нет данных"}</span>
+            </div>
+            <div class="addr">${s.label}</div>
+            <div class="row">
+              ${d ? `<span class="pill">${d} от вас</span>` : ""}
+              <span class="pill" data-open>Открыто до 22:00</span>
+            </div>
+            <div class="actions">
+              <a class="btn primary" target="_blank" rel="noopener"
+                 href="https://yandex.ru/maps/?rtext=~${s.lat},${s.lon}&rtt=auto">Маршрут</a>
+              <button class="btn" id="resetStore">Все магазины</button>
+            </div>
+          </div>`;
+      }
+
+      function cardHTML(d) {
+        const favKey = d.title + d.store_key;
+        const on = state.fav.has(favKey);
+        return `
+          <article class="card">
+            <div class="thumb">
+              ${d.image ? `<img src="${d.image}" alt="" loading="lazy">` : ""}
+              ${d.discount_percent ? `<span class="badge">−${d.discount_percent}%</span>` : ""}
+              <button class="fav" data-fav="${encodeURIComponent(favKey)}" data-on="${on}" aria-label="В избранное">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}"
+                     stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
+              </button>
+            </div>
+            <div class="body">
+              <h3>${d.title || ""}</h3>
+              <div class="prices">
+                <span class="now">${money(d.price)} ₽</span>
+                ${d.old_price ? `<span class="was">${money(d.old_price)} ₽</span>` : ""}
+              </div>
+              <span class="meta">${d.unit || d.category || ""}${d.period ? ` · ${d.period}` : ""}</span>
+            </div>
+          </article>`;
+      }
+
+      function skeletons(n = 4) {
+        return Array.from({ length: n }, () => `
+          <div class="skeleton">
+            <div class="thumb" style="aspect-ratio:1/1"></div>
+            <div class="line"></div><div class="line short"></div>
+          </div>`).join("");
+      }
+
+      function renderList(withSkeleton = false) {
+        if (withSkeleton) {
+          els.content.innerHTML = `<div class="grid">${skeletons()}</div>`;
+          return;
+        }
+
+        const q = state.q.trim().toLowerCase();
+        const list = cityStores()
+          .filter((s) => s.has_data)
+          .filter((s) => !q
+            || (s.label || "").toLowerCase().includes(q)
+            || (s.chain || "").toLowerCase().includes(q)
+            || (BY_STORE.get(s.key) || []).some((d) => (d.title || "").toLowerCase().includes(q)))
+          .sort((a, b) => storeMaxDiscount(b.key) - storeMaxDiscount(a.key));
+
+        els.count.textContent = `${list.length} магазинов со скидками`;
+        els.content.innerHTML = list.length
+          ? `<div class="store-list">${list.map((s) => {
+              const max = storeMaxDiscount(s.key), n = storeCount(s.key);
+              return `<a class="store-row" href="${slug(s.key)}">
+                ${logoHTML(s.chain)}
+                <span class="main">
+                  <span class="name">${s.chain}</span>
+                  <span class="sub">${s.label}</span>
+                </span>
+                <span class="pill">${max ? `до −${max}%` : `${n} тов.`}</span>
+              </a>`;
+            }).join("")}</div>`
+          : `<div class="empty">Ничего не нашлось. <b>Сбросьте поиск</b>.</div>`;
+      }
+
+      function bindCardEvents() {
+        els.content.querySelectorAll("[data-fav]").forEach((b) =>
+          b.addEventListener("click", () => {
+            const key = decodeURIComponent(b.dataset.fav);
+            state.fav.has(key) ? state.fav.delete(key) : state.fav.add(key);
+            localStorage.setItem("fav", JSON.stringify([...state.fav]));
+            b.dataset.on = state.fav.has(key);
+            b.firstElementChild.setAttribute("fill", state.fav.has(key) ? "currentColor" : "none");
+          }),
+        );
+      }
+
+      /* ---------- карта ---------- */
+
+      function pinIcon(store, active) {
+        const max = storeMaxDiscount(store.key);
+        const color = CHAIN_COLORS[store.chain] || "#444";
+        if (!store.has_data) {
+          // без данных — маленькая тихая точка, чтобы не засорять карту
+          return L.divIcon({
+            className: "", iconSize: [12, 12], iconAnchor: [6, 6],
+            html: `<div style="width:10px;height:10px;border-radius:50%;background:var(--muted);opacity:.45;border:2px solid var(--surface)"></div>`,
+          });
+        }
+        const logo = PIN_LOGOS[store.chain];
+        const inner = logo
+          ? `<img src="${logo}" alt="">`
+          : `<span style="font-size:13px;font-weight:800;color:#fff">${(store.chain || "?").slice(0, 1)}</span>`;
+        return L.divIcon({
+          className: "",
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+          html: `<div class="pin ${active ? "is-active" : ""}" style="--pin:${color};background:${logo ? "#fff" : color}">
+                   ${inner}
+                   ${max ? `<span class="pin-badge">−${max}%</span>` : ""}
+                 </div>`,
+        });
+      }
+
+      function renderMap() {
+        if (!map) return;
+        if (cluster) { cluster.clearLayers(); markers.clear(); }
+        const bounds = map.getBounds();
+        const stores = cityStores();
+
+        cluster = cluster || L.markerClusterGroup({
+          maxClusterRadius: 46,
+          iconCreateFunction: (c) => L.divIcon({
+            html: `<div class="cluster">${c.getChildCount()}</div>`,
+            className: "", iconSize: [40, 40],
+          }),
+        });
+
+        stores.forEach((s) => {
+          const m = L.marker([s.lat, s.lon], { icon: pinIcon(s, state.store === s.key) });
+          m.on("click", () => selectStore(s.key));
+          markers.set(s.key, m);
+          cluster.addLayer(m);
+        });
+        cluster.addTo(map);
+        const focus = stores.filter((s) => s.has_data);
+        const target = (focus.length ? focus : stores).map((s) => [s.lat, s.lon]);
+        if (target.length) map.fitBounds(L.latLngBounds(target), { padding: [40, 40], maxZoom: 14 });
+      }
+
+      function selectStore(key) {
+        if (key) { window.location.href = slug(key); return; }
+        state.store = null;
+        renderList();
+      }
+
+      function initMap() {
+        map = L.map("map", { zoomControl: false, attributionControl: true }).setView([55.7558, 37.6173], 11);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19, attribution: "© OpenStreetMap",
+        }).addTo(map);
+        cluster = L.markerClusterGroup({ maxClusterRadius: 46, iconCreateFunction: (c) => L.divIcon({
+          html: `<div class="cluster">${c.getChildCount()}</div>`, className: "", iconSize: [40, 40] }) });
+        map.addLayer(cluster);
+        map.on("moveend", () => { const b = map.getBounds(); if (state.bbox) $("areaBtn").hidden = false; state.bbox = b; });
+      }
+
+      async function boot() {
+        initMap();
+        DATA = await fetch("/data/deals.json").then((r) => r.json());
+
+        ITEMS = [...DATA.deals, ...DATA.card_deals];
+        BY_STORE = new Map();
+        ITEMS.forEach((d) => {
+          if (!BY_STORE.has(d.store_key)) BY_STORE.set(d.store_key, []);
+          BY_STORE.get(d.store_key).push(d);
+        });
+        MAP_STORES = (DATA.map_stores || []).map((s) => ({
+          ...s, has_data: BY_STORE.has(s.key),
+        }));
+
+        renderCats();
+        renderList();
+        renderMap();
+        $("legend").textContent = `${MAP_STORES.filter((s) => s.has_data).length} магазинов со скидками`;
+
+        els.q.addEventListener("input", (e) => { state.q = e.target.value; renderList(); });
+        els.sort.addEventListener("change", (e) => { state.sort = e.target.value; renderList(); });
+
+        $("zoomIn").onclick = () => map.zoomIn();
+        $("zoomOut").onclick = () => map.zoomOut();
+        $("areaBtn").onclick = () => {
+          const b = map.getBounds();
+          state.bbox = b;
+          $("areaBtn").hidden = true;
+          const inView = cityStores().filter((s) => b.contains([s.lat, s.lon]));
+          state.store = null;
+          renderList();
+          L.popup().setLatLng(b.getCenter()).setContent(`В этой области ${inView.length} магазинов`).openOn(map);
+        };
+
+        $("geoBtn").onclick = () => {
+          navigator.geolocation?.getCurrentPosition((pos) => {
+            state.user = [pos.coords.latitude, pos.coords.longitude];
+            if (userMarker) userMarker.remove();
+            userMarker = L.marker(state.user, { icon: L.divIcon({ html: '<div class="user-dot"></div>', className: "", iconSize: [16, 16] }) }).addTo(map);
+            map.setView(state.user, 13);
+            renderList();
+          }, () => alert("Не удалось определить местоположение"));
+        };
+
+        $("themeBtn").onclick = () => {
+          const root = document.documentElement;
+          const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          root.dataset.theme = cur === "dark" ? "light" : "dark";
+        };
+
+        const toggleSheet = () => { const p = $("panel"); p.dataset.collapsed = p.dataset.collapsed === "true" ? "false" : "true"; };
+        $("sheetHandle").onclick = toggleSheet;
+        $("modeBtn").onclick = toggleSheet;
+        $("panelHead").addEventListener("click", (e) => {
+          if (window.innerWidth <= 920 && e.target === $("panelHead")) toggleSheet();
+        });
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,190 @@
+---
+import "../../styles/app.css";
+import data from "../../../data/deals.json";
+
+export function getStaticPaths() {
+  return data.stores.map((store) => ({
+    params: { key: store.key.replaceAll(":", "-") },
+    props: { store },
+  }));
+}
+
+const { store } = Astro.props;
+const items = [...data.deals, ...data.card_deals].filter((d) => d.store_key === store.key);
+
+const CATS = [
+  ["Продукты", /молок|хлеб|мяс|сыр|творог|йогурт|яйц|масл|куриц|рыб|овощ|фрукт|банан|картоф|сахар|соль|круп|макарон|консерв|соус|кетчуп|майонез|колбас|сосиск|пельмен|морожен|шоколад|печень|конфет|торт|батон|каша|мука/i],
+  ["Напитки", /вода|сок|чай|кофе|напит|лимонад|квас|пиво|вино|морс|энергет/i],
+  ["Бытовая химия", /стирк|чистк|моющ|мыло|шампун|гель|порошок|салфет|бумаг|пакет|губк|отбелив/i],
+  ["Гигиена", /паст|щетк|прокладк|подгузник|дезодорант|крем|бритв|ватн|пластыр/i],
+  ["Дом", /лампа|батарейк|посуд|кружк|тарелк|полотенц|мешк/i],
+  ["Детям", /детск|игрушк|смесь|соск|бутылоч/i],
+];
+const catOf = (d) => {
+  const hit = CATS.find(([, re]) => re.test(d.title || "") || re.test(d.category || ""));
+  return hit ? hit[0] : "Прочее";
+};
+
+const withCats = items.map((d) => ({ ...d, cat: catOf(d) }));
+const usedCats = [...new Set(withCats.map((d) => d.cat))].sort();
+const maxDiscount = Math.max(...withCats.map((d) => d.discount_percent || 0), 0);
+const money = (v) => (v == null ? "" : v.toLocaleString("ru-RU", { maximumFractionDigits: 2 }));
+const updated = new Date(data.updated).toLocaleString("ru-RU", {
+  day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+});
+const slug = store.key.replaceAll(":", "-");
+---
+
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{store.chain} — {store.label}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  </head>
+  <body class="store-page">
+    <header class="sp-head">
+      <a class="sp-back" href="/">← На карту</a>
+      <div class="sp-title">
+        <span class="logo" style="width:44px;height:44px">
+          {store.chain === "Магнит" && <img src="/logos/magnit.png" alt="" style="width:32px;height:32px" />}
+          {store.chain === "Ашан" && <img src="/logos/auchan.png" alt="" style="width:32px;height:32px" />}
+          {store.chain === "Дикси" && <img src="/logos/dixy-emblem.svg" alt="" style="width:36px;height:36px" />}
+          {store.chain === "Пятёрочка" && <img src="/logos/pyat.png" alt="" style="width:32px;height:32px" />}
+        </span>
+        <div>
+          <h1>{store.chain}</h1>
+          <p class="sp-addr">{store.label}</p>
+        </div>
+      </div>
+      <div class="sp-meta">
+        <span class="pill">{items.length} товаров</span>
+        {maxDiscount > 0 && <span class="pill accent">до −{maxDiscount}%</span>}
+        <a class="btn primary" target="_blank" rel="noopener"
+           href={`https://yandex.ru/maps/?rtext=~${store.lat},${store.lon}&rtt=auto`}>Маршрут</a>
+      </div>
+    </header>
+
+    <section class="sp-toolbar">
+      <div class="chips" id="storeCats">
+        <button class="chip" data-cat="all" aria-pressed="true">Все</button>
+        {usedCats.map((c) => <button class="chip" data-cat={c} aria-pressed="false">{c}</button>)}
+      </div>
+      <select id="storeSort" aria-label="Сортировка">
+        <option value="discount">Сначала выгодные %</option>
+        <option value="price">Дешевле</option>
+      </select>
+    </section>
+
+    <main class="sp-body">
+      <p class="result-line"><span id="storeCount">{items.length} товаров</span> · обновлено {updated}</p>
+      <div class="grid" id="storeGrid">
+        {
+          withCats.map((d) => (
+            <article class="card" data-cat={d.cat} data-price={d.price} data-disc={d.discount_percent || 0}>
+              <div class="thumb">
+                {d.image && <img src={d.image} alt="" loading="lazy" />}
+                {d.discount_percent ? <span class="badge">−{d.discount_percent}%</span> : null}
+              </div>
+              <div class="body">
+                <h3>{d.title}</h3>
+                <div class="prices">
+                  <span class="now">{money(d.price)} ₽</span>
+                  {d.old_price ? <span class="was">{money(d.old_price)} ₽</span> : null}
+                </div>
+                <span class="meta">{d.unit || d.cat}{d.period ? ` · ${d.period}` : ""}</span>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+      {items.length === 0 && <div class="empty">Для этого магазина данных пока нет.</div>}
+    </main>
+
+    <div class="sp-map"><div id="storeMap"></div></div>
+
+    <script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script is:inline define:vars={{ lat: store.lat, lon: store.lon, chain: store.chain }}>
+      if (lat && lon) {
+        var map = L.map("storeMap", { zoomControl: true, attributionControl: false }).setView([lat, lon], 16);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+        L.marker([lat, lon]).addTo(map).bindPopup(chain);
+      } else {
+        document.querySelector(".sp-map").remove();
+      }
+    </script>
+
+    <script>
+      const chips = document.querySelectorAll("#storeCats .chip");
+      const sort = document.getElementById("storeSort");
+      const grid = document.getElementById("storeGrid");
+      const count = document.getElementById("storeCount");
+      const cards = [...grid.querySelectorAll(".card")];
+      const state = { cat: "all", sort: "discount" };
+
+      const apply = () => {
+        let shown = 0;
+        cards.forEach((c) => {
+          const ok = state.cat === "all" || c.dataset.cat === state.cat;
+          c.hidden = !ok;
+          if (ok) shown++;
+        });
+        const visible = cards.filter((c) => !c.hidden);
+        visible
+          .sort((a, b) =>
+            state.sort === "price"
+              ? Number(a.dataset.price || 0) - Number(b.dataset.price || 0)
+              : Number(b.dataset.disc || 0) - Number(a.dataset.disc || 0))
+          .forEach((c) => grid.appendChild(c));
+        count.textContent = `${shown} товаров`;
+      };
+
+      chips.forEach((chip) =>
+        chip.addEventListener("click", () => {
+          chips.forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
+          state.cat = chip.dataset.cat;
+          apply();
+        }),
+      );
+      sort.addEventListener("change", () => { state.sort = sort.value; apply(); });
+
+      document.querySelector(".sp-back").addEventListener("click", (e) => {
+        if (history.length > 1) { e.preventDefault(); history.back(); }
+      });
+    </script>
+
+    <style>
+      .store-page { max-width: 1180px; margin: 0 auto; padding: 20px 20px 40px; height: auto; }
+
+      .sp-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+      .sp-back {
+        padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
+        color: var(--fg); text-decoration: none; font-size: 14px; background: var(--surface);
+      }
+      .sp-back:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--line)); }
+      .sp-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .sp-title h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+      .sp-addr { margin: 2px 0 0; color: var(--muted); font-size: 13px; text-wrap: pretty; }
+      .sp-meta { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+      .pill.accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 700; }
+
+      .sp-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+      .sp-toolbar select {
+        padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px;
+        background: var(--surface); color: var(--fg); font: inherit; font-size: 13px;
+      }
+
+      .sp-body .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+      .sp-body { padding-bottom: 8px; }
+      .sp-map { margin-top: 24px; height: 240px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+      #storeMap { height: 100%; }
+
+      @media (max-width: 640px) {
+        .store-page { padding: 14px 14px 28px; }
+        .sp-meta { margin-left: 0; }
+        .sp-body .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    </style>
+  </body>
+</html>

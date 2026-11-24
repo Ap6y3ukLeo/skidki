@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Сбор Пятёрочки</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; padding: 24px; max-width: 720px; }
+      #log { white-space: pre-wrap; margin-top: 12px; padding: 12px; background: #f6f6f7; border-radius: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>Сбор Пятёрочки</h1>
+    <p>Магазин: <b id="store">—</b> · собрано товаров: <b id="total">0</b></p>
+    <div id="log"></div>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const store = params.get("store") || "35XY";
+      const address = params.get("address") || "";
+      const INGEST = "http://127.0.0.1:8765/5ka";
+      const log = (m) => { document.getElementById("log").textContent += m + "\n"; };
+
+      document.getElementById("store").textContent = store;
+
+      const api = (path) => `https://5d.5ka.ru/api/catalog/${path}`;
+
+      async function getJson(url) {
+        const r = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+        if (!r.ok) throw new Error(`${r.status} ${url.slice(0, 90)}`);
+        return r.json();
+      }
+
+      const num = (v) => (v == null ? null : Number(String(v).replace(",", ".")));
+
+      function toDeal(p) {
+        const price = num(p.prices?.discount) ?? num(p.prices?.regular);
+        const old = num(p.prices?.regular);
+        const hasPromo = p.prices?.discount != null && old && price && old > price;
+        return {
+          store: "Пятёрочка",
+          store_key: `pyat:${store}`,
+          city: "Москва",
+          address,
+          title: p.name,
+          price,
+          old_price: hasPromo ? old : null,
+          discount_percent: hasPromo ? Math.round((1 - price / old) * 100) : null,
+          period: null,
+          campaign: null,
+          unit: p.price_unit_label || p.uom || null,
+          category: null,
+          no_discount_data: !hasPromo,
+          url: `https://5ka.ru/product/${p.plu}/`,
+          image: p.image_links?.normal?.[0] || p.image_links?.small?.[0] || null,
+        };
+      }
+
+      async function run() {
+        const cats = await getJson(api(`v4/stores/${store}/categories?mode=delivery`));
+        const flat = [];
+        const walk = (list) => (list || []).forEach((c) => {
+          if (c.id && c.name) flat.push({ id: c.id, name: c.name });
+          if (c.categories) walk(c.categories);
+        });
+        walk(cats);
+        log(`категорий: ${flat.length}`);
+
+        let total = 0, discounts = 0;
+        for (const [i, cat] of flat.entries()) {
+          try {
+            const data = await getJson(api(`v3/stores/${store}/categories/${cat.id}/products?mode=delivery&limit=100`));
+            const deals = (data.products || []).map(toDeal).filter((d) => d.title && d.price);
+            if (deals.length) {
+              const res = await fetch(INGEST, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(deals) });
+              if (res.status !== 204) log(`  приёмник ответил ${res.status}`);
+            }
+            total += deals.length;
+            discounts += deals.filter((d) => d.discount_percent).length;
+            document.getElementById("total").textContent = String(total);
+            log(`${i + 1}/${flat.length} ${cat.name}: +${deals.length} (скидок ${discounts})`);
+          } catch (e) {
+            log(`${i + 1}/${flat.length} ${cat.name}: ошибка ${e.message}`);
+          }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        log(`ГОТОВО: товаров ${total}, со скидкой ${discounts}`);
+        window.__done = { total, discounts };
+      }
+
+      run().catch((e) => { log("СБОЙ: " + e.message); window.__done = { error: e.message }; });
+    </script>
+  </body>
+</html>
