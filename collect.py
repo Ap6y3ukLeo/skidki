@@ -12,6 +12,9 @@ import stores
 
 BULK = Path("data/bulk")
 
+# координаты магазинов, которых нет в справочниках сетей
+extra_coords = {"pyat:35XY": (55.6874, 37.5537)}
+
 
 def load_bulk() -> list[dict]:
     """Сделки из массовых прогонов. Дубликаты схлопываем, оставляя версию со старой ценой."""
@@ -41,6 +44,13 @@ def map_stores(deals: list[dict]) -> list[dict]:
             continue
 
     result = []
+    # сети вне справочников (Пятёрочка) — добавляем по сохранённым координатам
+    labels = {d.get("store_key"): d.get("address") for d in deals}
+    for key, coord in extra_coords.items():
+        if key in with_data and key not in pool:
+            pool[key] = {"key": key, "chain": "Пятёрочка", "label": labels.get(key) or "Пятёрочка",
+                         "lat": coord[0], "lon": coord[1]}
+
     for s in pool.values():
         city = None
         for name, (lat, lon) in stores.CITIES.items():
@@ -101,8 +111,11 @@ def main():
         if key and key not in seen:
             seen.add(key)
             shop = index.get(key) or {}
+            lat, lon = shop.get("lat"), shop.get("lon")
+            if (lat is None or lon is None) and key in extra_coords:
+                lat, lon = extra_coords[key]
             used.append({"key": key, "chain": d["store"], "label": d.get("address") or shop.get("label"),
-                         "city": d["city"], "lat": shop.get("lat"), "lon": shop.get("lon")})
+                         "city": d["city"], "lat": lat, "lon": lon})
 
     payload = {
         "min_discount": min_discount,

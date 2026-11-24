@@ -386,6 +386,14 @@ import "../styles/app.css";
         MAP_STORES = (DATA.map_stores || []).map((s) => ({
           ...s, has_data: BY_STORE.has(s.key),
         }));
+        // магазины с товарами, которых нет в справочнике карты (например, Пятёрочка),
+        // всё равно должны быть в списке
+        const known = new Set(MAP_STORES.map((s) => s.key));
+        (DATA.stores || []).forEach((s) => {
+          if (!known.has(s.key)) {
+            MAP_STORES.push({ ...s, has_data: true });
+          }
+        });
 
         renderCats();
         renderList();
