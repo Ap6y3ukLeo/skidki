@@ -12,8 +12,14 @@ import stores
 
 BULK = Path("data/bulk")
 
-# координаты магазинов, которых нет в справочниках сетей
-extra_coords = {"pyat:35XY": (55.6874, 37.5537)}
+PYAT_FILE = Path("data/stores-pyat.json")
+
+
+def pyat_stores() -> dict[str, dict]:
+    """Магазины Пятёрочки, для которых уже известны адрес и координаты."""
+    if not PYAT_FILE.exists():
+        return {}
+    return json.loads(PYAT_FILE.read_text(encoding="utf-8"))
 
 
 def load_bulk() -> list[dict]:
@@ -44,12 +50,13 @@ def map_stores(deals: list[dict]) -> list[dict]:
             continue
 
     result = []
-    # сети вне справочников (Пятёрочка) — добавляем по сохранённым координатам
+    # сети вне справочников (Пятёрочка) — берём адреса и координаты из data/stores-pyat.json
+    pyat = pyat_stores()
     labels = {d.get("store_key"): d.get("address") for d in deals}
-    for key, coord in extra_coords.items():
+    for key, info in pyat.items():
         if key in with_data and key not in pool:
-            pool[key] = {"key": key, "chain": "Пятёрочка", "label": labels.get(key) or "Пятёрочка",
-                         "lat": coord[0], "lon": coord[1]}
+            pool[key] = {"key": key, "chain": "Пятёрочка", "label": info.get("label") or labels.get(key),
+                         "lat": info.get("lat"), "lon": info.get("lon")}
 
     for s in pool.values():
         city = None
@@ -112,8 +119,9 @@ def main():
             seen.add(key)
             shop = index.get(key) or {}
             lat, lon = shop.get("lat"), shop.get("lon")
-            if (lat is None or lon is None) and key in extra_coords:
-                lat, lon = extra_coords[key]
+            if (lat is None or lon is None) and key in pyat_stores():
+                info = pyat_stores()[key]
+                lat, lon = info.get("lat"), info.get("lon")
             used.append({"key": key, "chain": d["store"], "label": d.get("address") or shop.get("label"),
                          "city": d["city"], "lat": lat, "lon": lon})
 
