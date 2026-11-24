@@ -338,6 +338,9 @@ import "../styles/app.css";
 
         cluster = cluster || L.markerClusterGroup({
           maxClusterRadius: 46,
+          disableClusteringAtZoom: 16,  // с 16-го зума показываем каждый магазин отдельно
+          spiderfyOnMaxZoom: true,
+          zoomToBoundsOnClick: true,
           iconCreateFunction: (c) => L.divIcon({
             html: `<div class="cluster">${c.getChildCount()}</div>`,
             className: "", iconSize: [40, 40],
