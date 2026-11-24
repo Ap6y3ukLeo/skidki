@@ -3,7 +3,11 @@ import "../../styles/app.css";
 import data from "../../../data/deals.json";
 
 export function getStaticPaths() {
-  return data.stores.map((store) => ({
+  // страницы нужны для всех магазинов карты, иначе пины без данных ведут в 404
+  const byKey = new Map();
+  (data.map_stores || []).forEach((s) => byKey.set(s.key, s));
+  (data.stores || []).forEach((s) => byKey.set(s.key, { ...(byKey.get(s.key) || {}), ...s }));
+  return [...byKey.values()].map((store) => ({
     params: { key: store.key.replaceAll(":", "-") },
     props: { store },
   }));
