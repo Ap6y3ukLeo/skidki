@@ -118,7 +118,7 @@ def fetch_listing_session(session: StealthySession, shop: dict, path: str = LIST
             }""",
             [shop["id"], ",".join(shop["coords"]), shop["label"]],
         )
-        page.goto(BASE + path, wait_until="domcontentloaded", timeout=60000)
+        page.goto(path if path.startswith("http") else BASE + path, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(6000)
         holder["html"] = page.content()
 
