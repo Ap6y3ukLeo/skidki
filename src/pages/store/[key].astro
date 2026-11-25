@@ -92,7 +92,7 @@ const slug = store.key.replaceAll(":", "-");
           withCats.map((d) => (
             <article class="card" data-cat={d.cat} data-price={d.price} data-disc={d.discount_percent || 0}>
               <div class="thumb">
-                {d.image && <img src={d.image} alt="" loading="lazy" />}
+                {d.image && <img src={d.image} alt="" loading="lazy" onerror="this.remove()" />}
                 {d.discount_percent ? <span class="badge">−{d.discount_percent}%</span> : null}
               </div>
               <div class="body">

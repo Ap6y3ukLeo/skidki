@@ -234,7 +234,7 @@ import "../styles/app.css";
         return `
           <article class="card">
             <div class="thumb">
-              ${d.image ? `<img src="${d.image}" alt="" loading="lazy">` : ""}
+              ${d.image ? `<img src="${d.image}" alt="" loading="lazy" onerror="this.remove()">` : ""}
               ${d.discount_percent ? `<span class="badge">−${d.discount_percent}%</span>` : ""}
               <button class="fav" data-fav="${encodeURIComponent(favKey)}" data-on="${on}" aria-label="В избранное">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}"
